@@ -18,6 +18,16 @@ pub enum BundleTarget {
   One(String),
 }
 
+impl BundleTarget {
+  #[allow(dead_code)]
+  pub fn to_vec(&self) -> Vec<String> {
+    match self {
+      Self::All(list) => list.clone(),
+      Self::One(i) => vec![i.clone()],
+    }
+  }
+}
+
 #[skip_serializing_none]
 #[derive(Debug, Default, PartialEq, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -43,9 +53,16 @@ pub struct MacConfig {
   pub entitlements: Option<String>,
 }
 
+fn default_language() -> String {
+  "en-US".into()
+}
+
 #[derive(Debug, Default, PartialEq, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WixConfig {
+  /// App language. See https://docs.microsoft.com/en-us/windows/win32/msi/localizing-the-error-and-actiontext-tables.
+  #[serde(default = "default_language")]
+  pub language: String,
   pub template: Option<PathBuf>,
   #[serde(default)]
   pub fragment_paths: Vec<PathBuf>,
@@ -61,6 +78,10 @@ pub struct WixConfig {
   pub merge_refs: Vec<String>,
   #[serde(default)]
   pub skip_webview_install: bool,
+  /// Path to the license file.
+  pub license: Option<String>,
+  #[serde(default)]
+  pub enable_elevated_update_task: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Clone, Deserialize, Serialize, JsonSchema)]
@@ -244,6 +265,14 @@ pub struct WindowConfig {
   pub label: Option<String>,
   /// The window webview URL.
   pub url: Option<String>,
+  /// Whether the file drop is enabled or not on the webview. By default it is enabled.
+  ///
+  /// Disabling it is required to use drag and drop on the frontend on Windows.
+  #[serde(default = "default_file_drop_enabled")]
+  pub file_drop_enabled: bool,
+  /// Whether or not the window starts centered or not.
+  #[serde(default)]
+  pub center: bool,
   /// The horizontal position of the window's top left corner
   pub x: Option<f64>,
   /// The vertical position of the window's top left corner
@@ -268,6 +297,9 @@ pub struct WindowConfig {
   /// Whether the window starts as fullscreen or not.
   #[serde(default)]
   pub fullscreen: bool,
+  /// Whether the window will be initially hidden or focused.
+  #[serde(default = "default_focus")]
+  pub focus: bool,
   /// Whether the window is transparent or not.
   #[serde(default)]
   pub transparent: bool,
@@ -283,6 +315,13 @@ pub struct WindowConfig {
   /// Whether the window should always be on top of other windows.
   #[serde(default)]
   pub always_on_top: bool,
+  /// Whether or not the window icon should be added to the taskbar.
+  #[serde(default)]
+  pub skip_taskbar: bool,
+}
+
+fn default_focus() -> bool {
+  true
 }
 
 fn default_visible() -> bool {
@@ -290,6 +329,10 @@ fn default_visible() -> bool {
 }
 
 fn default_decorations() -> bool {
+  true
+}
+
+fn default_file_drop_enabled() -> bool {
   true
 }
 

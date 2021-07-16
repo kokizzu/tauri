@@ -15,15 +15,13 @@ members = [
   "examples/helloworld/src-tauri",
   "examples/multiwindow/src-tauri",
   "examples/navigation/src-tauri",
-  "examples/params/src-tauri",
   "examples/splashscreen/src-tauri",
   "examples/state/src-tauri",
+  "examples/sidecar/src-tauri",
+  "examples/resources/src-tauri",
   # used to build updater artifacts
   "examples/updater/src-tauri",
 ]
-
-[patch.crates-io]
-tao = { git = "https://github.com/tauri-apps/tao", rev = "a3f533232df25dc30998809094ed5431b449489c" }
 
 # default to small, optimized workspace release binaries
 [profile.release]

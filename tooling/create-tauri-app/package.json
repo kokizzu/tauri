@@ -1,6 +1,6 @@
 {
   "name": "create-tauri-app",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.3",
   "description": "Jump right into a Tauri App!",
   "bin": {
     "create-tauri-app": "./bin/create-tauri-app.js"
@@ -27,8 +27,8 @@
     "lint": "eslint --ext ts \"./src/**/*.ts\"",
     "lint-fix": "eslint --fix --ext ts \"./src/**/*.ts\"",
     "lint:lockfile": "lockfile-lint --path yarn.lock --type yarn --validate-https --allowed-hosts npm yarn",
-    "format": "prettier --write --end-of-line=auto \"./**/*.{js,jsx,ts,tsx,html,css,json}\" --ignore-path .gitignore",
-    "format:check": "prettier --check --end-of-line=auto \"./**/*.{js,jsx,ts,tsx,html,css,json}\" --ignore-path .gitignore",
+    "format": "prettier --write --end-of-line=auto \"./**/*.{cjs,js,jsx,ts,tsx,html,css,json}\" --ignore-path .gitignore",
+    "format:check": "prettier --check --end-of-line=auto \"./**/*.{cjs,js,jsx,ts,tsx,html,css,json}\" --ignore-path .gitignore",
     "test": "jest --runInBand"
   },
   "dependencies": {

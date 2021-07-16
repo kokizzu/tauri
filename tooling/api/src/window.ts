@@ -21,11 +21,71 @@
  * }
  * ```
  * It is recommended to allowlist only the APIs you use for optimal bundle size and security.
+ *
+ * # Window events
+ *
+ * Events can be listened using `appWindow.listen`:
+ * ```typescript
+ * import { appWindow } from '@tauri-apps/api/window'
+ * appWindow.listen('tauri://move', ({ event, payload }) => {
+ *   const { x, y } = payload // payload here is a `PhysicalPosition`
+ * })
+ * ```
+ *
+ * Window-specific events emitted by the backend:
+ *
+ * #### 'tauri://resize'
+ * Emitted when the size of the window has changed.
+ * *EventPayload*:
+ * ```typescript
+ * type ResizePayload = PhysicalSize
+ * ```
+ *
+ * #### 'tauri://move'
+ * Emitted when the position of the window has changed.
+ * *EventPayload*:
+ * ```typescript
+ * type MovePayload = PhysicalPosition
+ * ```
+ *
+ * #### 'tauri://close-requested'
+ * Emitted when the user requests the window to be closed.
+ *
+ * #### 'tauri://destroyed'
+ * Emitted after the window is closed.
+ *
+ * #### 'tauri://focus'
+ * Emitted when the window gains focus.
+ *
+ * #### 'tauri://blur'
+ * Emitted when the window loses focus.
+ *
+ * #### 'tauri://scale-change'
+ * Emitted when the window's scale factor has changed.
+ * The following user actions can cause DPI changes:
+ * - Changing the display's resolution.
+ * - Changing the display's scale factor (e.g. in Control Panel on Windows).
+ * - Moving the window to a display with a different scale factor.
+ * *Event payload*:
+ * ```typescript
+ * interface ScaleFactorChanged {
+ *   scaleFactor: number
+ *   size: PhysicalSize
+ * }
+ * ```
+ *
+ * #### 'tauri://menu'
+ * Emitted when a menu item is clicked.
+ * *EventPayload*:
+ * ```typescript
+ * type MenuClicked = string
+ * ```
+ *
  * @packageDocumentation
  */
 
 import { invokeTauriCommand } from './helpers/tauri'
-import { EventCallback, UnlistenFn, listen, once } from './event'
+import { EventName, EventCallback, UnlistenFn, listen, once } from './event'
 import { emit } from './helpers/event'
 
 /** Allows you to retrieve information about a given monitor. */
@@ -113,22 +173,44 @@ declare global {
   }
 }
 
-/**
- * Get a handle to the current webview window. Allows emitting and listening to events from the backend that are tied to the window.
- *
- * @return The current window handle.
- */
-function getCurrent(): WebviewWindowHandle {
-  return new WebviewWindowHandle(window.__TAURI__.__currentWindow.label)
+/** Attention type to request on a window. */
+enum UserAttentionType {
+  /**
+   * ## Platform-specific
+   *  - **macOS:** Bounces the dock icon until the application is in focus.
+   * - **Windows:** Flashes both the window and the taskbar button until the application is in focus.
+   */
+  Critical = 1,
+  /**
+   * ## Platform-specific
+   * - **macOS:** Bounces the dock icon once.
+   * - **Windows:** Flashes the taskbar button until the application is in focus.
+   */
+  Informational
 }
 
 /**
- * Gets metadata for all available webview windows.
+ * Get an instance of `WebviewWindow` for the current webview window.
  *
- * @return The list of webview handles.
+ * @return The current WebviewWindow.
  */
-function getAll(): WindowDef[] {
-  return window.__TAURI__.__windows
+function getCurrent(): WebviewWindow {
+  // @ts-expect-error
+  return new WebviewWindow(window.__TAURI__.__currentWindow.label, {
+    skip: true
+  })
+}
+
+/**
+ * Gets an instance of `WebviewWindow` for all available webview windows.
+ *
+ * @return The list of WebviewWindow.
+ */
+function getAll(): WebviewWindow[] {
+  // @ts-expect-error
+  return window.__TAURI__.__windows.map(
+    (w) => new WebviewWindow(w, { skip: true })
+  )
 }
 
 /** @ignore */
@@ -158,7 +240,7 @@ class WebviewWindowHandle {
    * @returns A promise resolving to a function to unlisten to the event.
    */
   async listen<T>(
-    event: string,
+    event: EventName,
     handler: EventCallback<T>
   ): Promise<UnlistenFn> {
     if (this._handleTauriEvent(event, handler)) {
@@ -222,76 +304,22 @@ class WebviewWindowHandle {
 }
 
 /**
- * Create new webview windows and get a handle to existing ones.
- * @example
- * ```typescript
- * // loading embedded asset:
- * const webview = new WebviewWindow('theUniqueLabel', {
- *   url: 'path/to/page.html'
- * })
- * // alternatively, load a remote URL:
- * const webview = new WebviewWindow('theUniqueLabel', {
- *   url: 'https://github.com/tauri-apps/tauri'
- * })
- *
- * webview.once('tauri://created', function () {
- *  // webview window successfully created
- * })
- * webview.once('tauri://error', function (e) {
- *  // an error happened creating the webview window
- * })
- *
- * // emit an event to the backend
- * await webview.emit("some event", "data")
- * // listen to an event from the backend
- * const unlisten = await webview.listen("event name", e => {})
- * unlisten()
- * ```
- */
-class WebviewWindow extends WebviewWindowHandle {
-  constructor(label: string, options: WindowOptions = {}) {
-    super(label)
-    invokeTauriCommand({
-      __tauriModule: 'Window',
-      message: {
-        cmd: 'createWebview',
-        data: {
-          options: {
-            label,
-            ...options
-          }
-        }
-      }
-    })
-      .then(async () => this.emit('tauri://created'))
-      .catch(async (e) => this.emit('tauri://error', e))
-  }
-
-  /**
-   * Gets the WebviewWindow handle for the webview associated with the given label.
-   *
-   * @param label The webview window label.
-   * @returns The handle to communicate with the webview or null if the webview doesn't exist.
-   */
-  static getByLabel(label: string): WebviewWindowHandle | null {
-    if (getAll().some((w) => w.label === label)) {
-      return new WebviewWindowHandle(label)
-    }
-    return null
-  }
-}
-
-/**
  * Manage the current window object.
  */
-class WindowManager {
+class WindowManager extends WebviewWindowHandle {
   // Getters
   /** The scale factor that can be used to map physical pixels to logical pixels. */
   async scaleFactor(): Promise<number> {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'scaleFactor'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'scaleFactor'
+          }
+        }
       }
     })
   }
@@ -301,7 +329,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'innerPosition'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'innerPosition'
+          }
+        }
       }
     })
   }
@@ -311,7 +345,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'outerPosition'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'outerPosition'
+          }
+        }
       }
     })
   }
@@ -324,7 +364,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'innerSize'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'innerSize'
+          }
+        }
       }
     })
   }
@@ -337,7 +383,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'outerSize'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'outerSize'
+          }
+        }
       }
     })
   }
@@ -347,7 +399,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'isFullscreen'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'isFullscreen'
+          }
+        }
       }
     })
   }
@@ -357,7 +415,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'isMaximized'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'isMaximized'
+          }
+        }
       }
     })
   }
@@ -367,7 +431,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'isDecorated'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'isDecorated'
+          }
+        }
       }
     })
   }
@@ -377,7 +447,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'isResizable'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'isResizable'
+          }
+        }
       }
     })
   }
@@ -387,12 +463,80 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'isVisible'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'isVisible'
+          }
+        }
       }
     })
   }
 
   // Setters
+
+  /**
+   * Centers the window.
+   *
+   * @param resizable
+   * @returns A promise indicating the success or failure of the operation.
+   */
+  async center(): Promise<void> {
+    return invokeTauriCommand({
+      __tauriModule: 'Window',
+      message: {
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'center'
+          }
+        }
+      }
+    })
+  }
+
+  /**
+   *  Requests user attention to the window, this has no effect if the application
+   * is already focused. How requesting for user attention manifests is platform dependent,
+   * see `UserAttentionType` for details.
+   *
+   * Providing `null` will unset the request for user attention. Unsetting the request for
+   * user attention might not be done automatically by the WM when the window receives input.
+   *
+   * ## Platform-specific
+   *
+   * - **macOS:** `null` has no effect.
+   *
+   * @param resizable
+   * @returns A promise indicating the success or failure of the operation.
+   */
+  async requestUserAttention(
+    requestType: UserAttentionType | null
+  ): Promise<void> {
+    let requestType_ = null
+    if (requestType) {
+      if (requestType === UserAttentionType.Critical) {
+        requestType_ = { type: 'Critical' }
+      } else {
+        requestType_ = { type: 'Informational' }
+      }
+    }
+    return invokeTauriCommand({
+      __tauriModule: 'Window',
+      message: {
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'requestUserAttention',
+            payload: requestType_
+          }
+        }
+      }
+    })
+  }
 
   /**
    * Updates the window resizable flag.
@@ -404,8 +548,14 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'setResizable',
-        data: resizable
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'setResizable',
+            payload: resizable
+          }
+        }
       }
     })
   }
@@ -420,8 +570,14 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'setTitle',
-        data: title
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'setTitle',
+            payload: title
+          }
+        }
       }
     })
   }
@@ -435,7 +591,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'maximize'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'maximize'
+          }
+        }
       }
     })
   }
@@ -449,7 +611,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'unmaximize'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'unmaximize'
+          }
+        }
       }
     })
   }
@@ -463,7 +631,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'minimize'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'minimize'
+          }
+        }
       }
     })
   }
@@ -477,7 +651,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'unminimize'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'unminimize'
+          }
+        }
       }
     })
   }
@@ -491,7 +671,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'show'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'show'
+          }
+        }
       }
     })
   }
@@ -505,7 +691,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'hide'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'hide'
+          }
+        }
       }
     })
   }
@@ -519,7 +711,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'close'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'close'
+          }
+        }
       }
     })
   }
@@ -534,8 +732,14 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'setDecorations',
-        data: decorations
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'setDecorations',
+            payload: decorations
+          }
+        }
       }
     })
   }
@@ -550,8 +754,14 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'setAlwaysOnTop',
-        data: alwaysOnTop
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'setAlwaysOnTop',
+            payload: alwaysOnTop
+          }
+        }
       }
     })
   }
@@ -576,12 +786,18 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'setSize',
+        cmd: 'manage',
         data: {
-          type: size.type,
-          data: {
-            width: size.width,
-            height: size.height
+          label: this.label,
+          cmd: {
+            type: 'setSize',
+            payload: {
+              type: size.type,
+              data: {
+                width: size.width,
+                height: size.height
+              }
+            }
           }
         }
       }
@@ -610,16 +826,22 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'setMinSize',
-        data: size
-          ? {
-              type: size.type,
-              data: {
-                width: size.width,
-                height: size.height
-              }
-            }
-          : null
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'setMinSize',
+            payload: size
+              ? {
+                  type: size.type,
+                  data: {
+                    width: size.width,
+                    height: size.height
+                  }
+                }
+              : null
+          }
+        }
       }
     })
   }
@@ -646,16 +868,22 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'setMaxSize',
-        data: size
-          ? {
-              type: size.type,
-              data: {
-                width: size.width,
-                height: size.height
-              }
-            }
-          : null
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'setMaxSize',
+            payload: size
+              ? {
+                  type: size.type,
+                  data: {
+                    width: size.width,
+                    height: size.height
+                  }
+                }
+              : null
+          }
+        }
       }
     })
   }
@@ -685,12 +913,18 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'setPosition',
+        cmd: 'manage',
         data: {
-          type: position.type,
-          data: {
-            x: position.x,
-            y: position.y
+          label: this.label,
+          cmd: {
+            type: 'setPosition',
+            payload: {
+              type: position.type,
+              data: {
+                x: position.x,
+                y: position.y
+              }
+            }
           }
         }
       }
@@ -707,8 +941,14 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'setFullscreen',
-        data: fullscreen
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'setFullscreen',
+            payload: fullscreen
+          }
+        }
       }
     })
   }
@@ -722,7 +962,13 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'setFocus'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'setFocus'
+          }
+        }
       }
     })
   }
@@ -737,9 +983,15 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'setIcon',
+        cmd: 'manage',
         data: {
-          icon
+          label: this.label,
+          cmd: {
+            type: 'setIcon',
+            payload: {
+              icon
+            }
+          }
         }
       }
     })
@@ -755,8 +1007,14 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'setSkipTaskbar',
-        data: skip
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'setSkipTaskbar',
+            payload: skip
+          }
+        }
       }
     })
   }
@@ -770,14 +1028,85 @@ class WindowManager {
     return invokeTauriCommand({
       __tauriModule: 'Window',
       message: {
-        cmd: 'startDragging'
+        cmd: 'manage',
+        data: {
+          label: this.label,
+          cmd: {
+            type: 'startDragging'
+          }
+        }
       }
     })
   }
 }
 
-/** The manager for the current window. Allows you to manipulate the window object. */
-const appWindow = new WindowManager()
+/**
+ * Create new webview windows and get a handle to existing ones.
+ * @example
+ * ```typescript
+ * // loading embedded asset:
+ * const webview = new WebviewWindow('theUniqueLabel', {
+ *   url: 'path/to/page.html'
+ * })
+ * // alternatively, load a remote URL:
+ * const webview = new WebviewWindow('theUniqueLabel', {
+ *   url: 'https://github.com/tauri-apps/tauri'
+ * })
+ *
+ * webview.once('tauri://created', function () {
+ *  // webview window successfully created
+ * })
+ * webview.once('tauri://error', function (e) {
+ *  // an error happened creating the webview window
+ * })
+ *
+ * // emit an event to the backend
+ * await webview.emit("some event", "data")
+ * // listen to an event from the backend
+ * const unlisten = await webview.listen("event name", e => {})
+ * unlisten()
+ * ```
+ */
+class WebviewWindow extends WindowManager {
+  constructor(label: string, options: WindowOptions = {}) {
+    super(label)
+    // @ts-expect-error
+    if (!options?.skip) {
+      invokeTauriCommand({
+        __tauriModule: 'Window',
+        message: {
+          cmd: 'createWebview',
+          data: {
+            options: {
+              label,
+              ...options
+            }
+          }
+        }
+      })
+        .then(async () => this.emit('tauri://created'))
+        .catch(async (e) => this.emit('tauri://error', e))
+    }
+  }
+
+  /**
+   * Gets the WebviewWindow for the webview associated with the given label.
+   *
+   * @param label The webview window label.
+   * @returns The WebviewWindow instance to communicate with the webview or null if the webview doesn't exist.
+   */
+  static getByLabel(label: string): WebviewWindow | null {
+    if (getAll().some((w) => w.label === label)) {
+      // @ts-expect-error
+      return new WebviewWindow(label, { skip: true })
+    }
+    return null
+  }
+}
+
+/** The WebviewWindow for the current window. */
+// @ts-expect-error
+const appWindow = new WebviewWindow()
 
 /** Configuration for the window to create. */
 interface WindowOptions {
@@ -785,6 +1114,8 @@ interface WindowOptions {
    * Remote URL or local file path to open, e.g. `https://github.com/tauri-apps` or `path/to/page.html`.
    */
   url?: string
+  /** Show window in the center of the screen.. */
+  center?: boolean
   /** The initial vertical position. Only applies if `y` is also set. */
   x?: number
   /** The initial horizontal position. Only applies if `x` is also set. */
@@ -870,6 +1201,7 @@ export {
   PhysicalSize,
   LogicalPosition,
   PhysicalPosition,
+  UserAttentionType,
   currentMonitor,
   primaryMonitor,
   availableMonitors

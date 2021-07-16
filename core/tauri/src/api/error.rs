@@ -35,7 +35,11 @@ pub enum Error {
   /// HTTP method error.
   #[error("{0}")]
   HttpMethod(#[from] http::method::InvalidMethod),
-  /// Invalid HTTO header.
+  /// Invalid HTTP header value.
+  #[cfg(feature = "reqwest-client")]
+  #[error("{0}")]
+  HttpHeaderValue(#[from] http::header::InvalidHeaderValue),
+  /// Invalid HTTP header value.
   #[error("{0}")]
   HttpHeader(#[from] http::header::InvalidHeaderName),
   /// Failed to serialize header value as string.
@@ -73,10 +77,6 @@ pub enum Error {
   #[cfg(feature = "cli")]
   #[error("failed to parse CLI arguments: {0}")]
   ParseCliArguments(#[from] clap::Error),
-  /// Shortcut error.
-  #[cfg(global_shortcut_all)]
-  #[error("shortcut error: {0}")]
-  Shortcut(#[from] tauri_hotkey::Error),
   /// Shell error.
   #[error("shell error: {0}")]
   Shell(String),

@@ -42,6 +42,14 @@ pub struct WindowConfig {
   /// The window webview URL.
   #[serde(default)]
   pub url: WindowUrl,
+  /// Whether the file drop is enabled or not on the webview. By default it is enabled.
+  ///
+  /// Disabling it is required to use drag and drop on the frontend on Windows.
+  #[serde(default = "default_file_drop_enabled")]
+  pub file_drop_enabled: bool,
+  /// Center the window.
+  #[serde(default)]
+  pub center: bool,
   /// The horizontal position of the window's top left corner
   pub x: Option<f64>,
   /// The vertical position of the window's top left corner
@@ -120,11 +128,17 @@ fn default_title() -> String {
   "Tauri App".to_string()
 }
 
+fn default_file_drop_enabled() -> bool {
+  true
+}
+
 impl Default for WindowConfig {
   fn default() -> Self {
     Self {
       label: default_window_label(),
       url: WindowUrl::default(),
+      file_drop_enabled: default_file_drop_enabled(),
+      center: false,
       x: None,
       y: None,
       width: default_width(),
@@ -649,6 +663,8 @@ mod build {
     fn to_tokens(&self, tokens: &mut TokenStream) {
       let label = str_lit(&self.label);
       let url = &self.url;
+      let file_drop_enabled = self.file_drop_enabled;
+      let center = self.center;
       let x = opt_lit(self.x.as_ref());
       let y = opt_lit(self.y.as_ref());
       let width = self.width;
@@ -673,6 +689,8 @@ mod build {
         WindowConfig,
         label,
         url,
+        file_drop_enabled,
+        center,
         x,
         y,
         width,
@@ -937,6 +955,8 @@ mod test {
       windows: vec![WindowConfig {
         label: "main".to_string(),
         url: WindowUrl::default(),
+        file_drop_enabled: true,
+        center: false,
         x: None,
         y: None,
         width: 800f64,

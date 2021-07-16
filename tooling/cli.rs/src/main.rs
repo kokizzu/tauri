@@ -2,6 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
+#![allow(
+    // Clippy bug: https://github.com/rust-lang/rust-clippy/issues/7422
+    clippy::nonstandard_macro_braces,
+)]
+
 pub use anyhow::Result;
 use clap::{crate_version, load_yaml, App, AppSettings, ArgMatches};
 use dialoguer::Input;
@@ -12,6 +17,7 @@ mod dev;
 mod helpers;
 mod info;
 mod init;
+mod interface;
 mod sign;
 
 // temporary fork from https://github.com/mitsuhiko/console until 0.14.1+ release
@@ -141,11 +147,13 @@ fn dev_command(matches: &ArgMatches) -> Result<()> {
     .values_of("args")
     .map(|a| a.into_iter().map(|v| v.to_string()).collect())
     .unwrap_or_default();
+  let release_mode = matches.is_present("release");
 
   let mut dev_runner = dev::Dev::new()
     .exit_on_panic(exit_on_panic)
     .args(args)
-    .features(features);
+    .features(features)
+    .release_mode(release_mode);
 
   if let Some(runner) = runner {
     dev_runner = dev_runner.runner(runner.to_string());
@@ -267,15 +275,15 @@ fn main() -> Result<()> {
   let matches = app_matches.subcommand_matches("tauri").unwrap();
 
   if let Some(matches) = matches.subcommand_matches("init") {
-    init_command(&matches)?;
+    init_command(matches)?;
   } else if let Some(matches) = matches.subcommand_matches("dev") {
-    dev_command(&matches)?;
+    dev_command(matches)?;
   } else if let Some(matches) = matches.subcommand_matches("build") {
-    build_command(&matches)?;
+    build_command(matches)?;
   } else if matches.subcommand_matches("info").is_some() {
     info_command()?;
   } else if let Some(matches) = matches.subcommand_matches("sign") {
-    sign_command(&matches)?;
+    sign_command(matches)?;
   }
 
   Ok(())
